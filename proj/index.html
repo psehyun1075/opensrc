@@ -1,353 +1,347 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>졸음운전 방지 시스템 (v3.3 - 1초 감지)</title>
-    
-    <!-- 1. Tailwind CSS 로드 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- 2. MediaPipe 라이브러리 로드 (drawing_utils 포함) -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    
-    <!-- 3. Tone.js (경고음 라이브러리) 로드 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>졸음운전 방지 시스템 (웹캠/파일 토글, 스무딩, 쿨다운)</title>
 
-    <!-- 4. CSS 코드를 <style> 태그 안에 직접 넣기 -->
-    <style>
-        /* 로딩 애니메이션 */
-        .loader {
-            border: 8px solid #f3f3f3; /* Light grey */
-            border-top: 8px solid #3498db; /* Blue */
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 10;
-        }
-        @keyframes spin {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg); }
-        }
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-        /* 경고 오버레이 애니메이션 */
-        @keyframes pulse {
-            from { opacity: 0.7; }
-            to { opacity: 1; }
-        }
-    </style>
+  <!-- MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+  <!-- Tone.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+
+  <style>
+    .loader{border:8px solid #f3f3f3;border-top:8px solid #3498db;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10}
+    @keyframes spin{0%{transform:translate(-50%,-50%) rotate(0)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
+  </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen font-sans p-4">
+<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col items-center justify-center">
 
-    <!-- 경고 오버레이 -->
-    <div id="alarm-overlay" class="hidden fixed top-0 left-0 w-full h-full bg-red-600 bg-opacity-75 flex items-center justify-center z-50 animate-pulse">
-        <h1 class="text-6xl md:text-8xl font-extrabold text-white">!! 졸음 감지 !!</h1>
+  <!-- 경고 오버레이 -->
+  <div id="alarm-overlay" class="hidden fixed inset-0 bg-red-600/75 z-50 flex items-center justify-center">
+    <h1 class="text-6xl md:text-8xl font-extrabold animate-pulse">!! 졸음 감지 !!</h1>
+  </div>
+
+  <!-- 시작 버튼 -->
+  <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg text-2xl shadow-lg mb-6">
+    시작(오디오 권한 활성화)
+  </button>
+
+  <!-- 상단 컨트롤 -->
+  <div class="w-full max-w-[760px] flex flex-col gap-3 mb-4">
+    <div class="flex flex-wrap gap-2">
+      <button id="btn-file" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">파일로 분석</button>
+      <button id="btn-cam"  class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">카메라 분석</button>
+      <input id="pick-file" type="file" accept="video/*" class="hidden">
+      <button id="btn-pick" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">파일 선택</button>
+
+      <button id="btn-play"   class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded ml-auto">재생/일시정지</button>
+      <button id="btn-replay" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded">처음부터</button>
     </div>
 
-    <!-- 
-      버튼의 초기 상태를 HTML에 직접 정의합니다. (disabled, "비디오 로딩 중...")
-    -->
-    <button id="start-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg text-2xl shadow-lg transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-        비디오 로딩 중...
-    </button>
-    
-    <!-- 메인 앱 (시작 후 표시됨) -->
-    <div id="app" class="hidden flex flex-col items-center">
-        <h1 class="text-4xl md:text-5xl font-bold mb-4 text-blue-400">졸음운전 방지 시스템</h1>
-        <p class="text-lg md:text-xl mb-6 text-gray-300">비디오 파일에서 운전자의 눈 깜빡임을 감지합니다.</p>
-    
-        <!-- 비디오 + 캔버스 컨테이너 -->
-        <div id="video-canvas-container" class="relative w-full max-w-[640px] aspect-video bg-gray-700 rounded-lg shadow-2xl overflow-hidden">
-            
-            <video id="videoFile" class="absolute w-full h-full" loop muted playsinline src="drowsy_test_video.mp4"></video>
-            
-            <canvas id="canvas" class="absolute w-full h-full"></canvas>
-            <div id="loader" class="loader"></div>
-        </div>
-    
-        <!-- 상태 대시보드 -->
-        <div class="mt-6 w-full max-w-[640px] bg-gray-800 p-6 rounded-lg shadow-lg">
-            <div class="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
-                <div class="text-left w-full sm:w-1/2">
-                    <span class="text-sm text-gray-400">현재 상태</span>
-                    <h2 id="status" class="text-3xl font-bold text-green-400">시스템 로딩 중...</h2>
-                </div>
-                <div class="text-right w-full sm:w-1/2">
-                    <span class="text-sm text-gray-400">눈 종횡비 (EAR)</span>
-                    <h2 id="ear-value" class="text-3xl font-bold text-blue-300">--</h2>
-                </div>
-            </div>
-            <!-- 1초로 수정된 설명 -->
-            <p class="text-xs text-gray-500 mt-4 text-center">※ EAR 값이 0.2 이하로 1초간 지속되면 경고음이 울립니다.</p>
-            <div class="mt-4 text-center">
-                <button id="play-pause-button" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">
-                    비디오 재생/일시정지
-                </button>
-                <button id="restart-button" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md ml-2 transition duration-300">
-                    비디오 다시 시작
-                </button>
-            </div>
-        </div>
+    <div class="text-xs text-gray-400">
+      · 파일 기본 경로: <code>drowsy_test_video.mp4</code> (같은 폴더) · 실제 사용은 “카메라 분석” 권장
     </div>
+  </div>
 
-    <!-- <script> 태그 (type="module" 없음) -->
-    <script>
-        // DOM 요소 가져오기
-        const videoFileElement = document.getElementById('videoFile');
-        const canvasElement = document.getElementById('canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const statusElement = document.getElementById('status');
-        const earValueElement = document.getElementById('ear-value');
-        const alarmOverlay = document.getElementById('alarm-overlay');
-        const loader = document.getElementById('loader');
-        const startButton = document.getElementById('start-button');
-        const appElement = document.getElementById('app');
-        const playPauseButton = document.getElementById('play-pause-button');
-        const restartButton = document.getElementById('restart-button');
+  <!-- 비디오/캔버스 -->
+  <div class="relative w-full max-w-[760px] aspect-video bg-gray-800 rounded-lg shadow-2xl overflow-hidden">
+    <video id="video" class="absolute w-full h-full object-contain bg-black" muted playsinline></video>
+    <canvas id="canvas" class="absolute w-full h-full"></canvas>
+    <div id="loader" class="loader hidden"></div>
+  </div>
 
-        // 경고음 신디사이저 (Tone.js)
-        let beep;
+  <!-- 상태판 -->
+  <div class="mt-5 w-full max-w-[760px] bg-gray-800 p-5 rounded-lg">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <div class="text-gray-400 text-sm">현재 상태</div>
+        <div id="status" class="text-3xl font-bold text-blue-400">대기 중</div>
+      </div>
+      <div class="text-right">
+        <div class="text-gray-400 text-sm">EAR(스무딩)</div>
+        <div id="ear" class="text-3xl font-bold text-blue-300">--</div>
+      </div>
+    </div>
+    <div class="text-xs text-gray-500 mt-3 text-center">
+      ※ EAR &lt; <span id="th-ear">0.20</span> 가 <span id="th-sec">1.0</span>초 이상 지속되면 0.2초 ‘삡’과 함께 경고. (2초 쿨다운)
+    </div>
+  </div>
 
-        // 졸음 감지 상수
-        const EAR_THRESHOLD = 0.20; // 눈 감김 임계값
-        
-        // === 1초로 수정 ===
-        const DROWSY_TIME_THRESHOLD = 1000; // 졸음 지속 시간 (ms) - 1초
+  <script>
+    // ====== 요소 ======
+    const startBtn   = document.getElementById('start-btn');
+    const btnFile    = document.getElementById('btn-file');
+    const btnCam     = document.getElementById('btn-cam');
+    const btnPick    = document.getElementById('btn-pick');
+    const inputPick  = document.getElementById('pick-file');
 
-        // 상태 변수
-        let isDrowsy = false;
-        let drowsyStartTime = null;
-        let isVideoPlaying = false;
+    const videoEl    = document.getElementById('video');
+    const canvasEl   = document.getElementById('canvas');
+    const ctx        = canvasEl.getContext('2d');
+    const loader     = document.getElementById('loader');
 
-        // 초기 비디오 로드
-        videoFileElement.onloadeddata = () => {
-            console.log("비디오 로드 완료.");
-            loader.style.display = 'none';
-            statusElement.textContent = "시스템 준비 완료";
-            statusElement.className = "text-3xl font-bold text-blue-400";
+    const btnPlay    = document.getElementById('btn-play');
+    const btnReplay  = document.getElementById('btn-replay');
 
-            canvasElement.width = videoFileElement.videoWidth;
-            canvasElement.height = videoFileElement.videoHeight;
-            const container = document.getElementById('video-canvas-container');
-            
-            container.style.width = '100%';
-            container.style.height = 'auto';
-            container.style.aspectRatio = `${videoFileElement.videoWidth} / ${videoFileElement.videoHeight}`;
+    const statusEl   = document.getElementById('status');
+    const earEl      = document.getElementById('ear');
+    const alarmOv    = document.getElementById('alarm-overlay');
 
-            // 버튼을 활성화하고 텍스트를 변경합니다.
-            startButton.disabled = false;
-            startButton.textContent = "졸음운전 방지 시스템 시작";
-        };
+    // ====== 파라미터 ======
+    const EAR_THRESHOLD = 0.20;      // 임계 EAR
+    const HOLD_MS       = 1000;      // 지속시간 1초
+    const COOLDOWN_MS   = 2000;      // 경고음 쿨다운 2초
+    const GRACE_MS      = 500;       // 얼굴 재검출 관용 0.5초
+    const SMOOTH_N      = 10;        // EAR 이동평균 프레임 수
+    const TARGET_W      = 640, TARGET_H = 480;
 
-        // 비디오 로드 실패 시
-        videoFileElement.onerror = () => {
-            console.error("비디오 파일을 로드할 수 없습니다. 'drowsy_test_video.mp4' 파일이 루트 폴더에 있는지 확인하세요.");
-            statusElement.textContent = "비디오 로드 실패";
-            statusElement.className = "text-3xl font-bold text-red-500";
-            loader.style.display = 'none';
-            startButton.disabled = true;
-            startButton.textContent = "비디오 파일 오류";
-        }
+    document.getElementById('th-ear').textContent = EAR_THRESHOLD.toFixed(2);
+    document.getElementById('th-sec').textContent = (HOLD_MS/1000).toFixed(1);
 
-        // 시작 버튼 클릭 이벤트
-        startButton.addEventListener('click', async () => {
-            await Tone.start(); 
-            beep = new Tone.Synth({
-                oscillator: { type: 'sine' },
-                envelope: { attack: 0.1, decay: 0.1, sustain: 0.8, release: 0.1 }
-            }).toDestination();
-            beep.volume.value = -6;
+    // ====== 상태 ======
+    let mode = 'file';           // 'file' | 'cam'
+    let rafId = 0;
+    let camera = null;
+    let synth = null;
+    let lastBeep = 0;
 
-            startButton.classList.add('hidden');
-            appElement.classList.remove('hidden');
+    let lowStart = null;         // EAR<thresh 시작 시각
+    let lastSeen = 0;            // 마지막 얼굴 검출 시각
+    let graceUntil = 0;          // 관용 구간 종료 시각
 
-            videoFileElement.play();
-            isVideoPlaying = true;
-            playPauseButton.textContent = "비디오 일시정지";
-            startAnalysis(); 
-        });
+    const earBuf = [];           // 이동평균 버퍼
 
-        // 비디오 재생/일시정지 버튼
-        playPauseButton.addEventListener('click', () => {
-            if (videoFileElement.paused) {
-                videoFileElement.play();
-                isVideoPlaying = true;
-                playPauseButton.textContent = "비디오 일시정지";
-                startAnalysis(); 
+    // ====== 유틸 ======
+    const now = () => performance.now();
+
+    function avg(arr){
+      return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+    }
+
+    function pushEar(v){
+      earBuf.push(v);
+      if (earBuf.length > SMOOTH_N) earBuf.shift();
+      return avg(earBuf);
+    }
+
+    function dist(a,b){
+      const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0);
+      return Math.hypot(dx,dy,dz);
+    }
+
+    function earOf(landmarks, idx){
+      const p1=landmarks[idx[0]], p2=landmarks[idx[1]], p3=landmarks[idx[2]],
+            p4=landmarks[idx[3]], p5=landmarks[idx[4]], p6=landmarks[idx[5]];
+      const A=dist(p2,p6), B=dist(p3,p5), C=dist(p1,p4);
+      return (A+B)/(2*C + 1e-6);
+    }
+
+    const LIDX = [33,160,158,133,153,144];   // 좌안 6점
+    const RIDX = [362,385,387,263,373,380];  // 우안 6점
+
+    function setStatus(text, cls){
+      statusEl.textContent = text;
+      statusEl.className = `text-3xl font-bold ${cls}`;
+    }
+
+    function showOverlay(on){
+      alarmOv.classList.toggle('hidden', !on);
+    }
+
+    function beepOnce(){
+      const t = now();
+      if (t - lastBeep < COOLDOWN_MS) return;
+      lastBeep = t;
+      synth.triggerAttackRelease("A4", 0.2); // 0.2초 '삡'
+    }
+
+    function resetState(){
+      earBuf.length = 0;
+      lowStart = null;
+      showOverlay(false);
+    }
+
+    // ====== Tone.js 시작(사용자 제스처 필요) ======
+    startBtn.addEventListener('click', async () => {
+      await Tone.start();
+      synth = new Tone.Synth({
+        oscillator:{ type:'sine' },
+        envelope:{ attack:0.01, decay:0.05, sustain:0.3, release:0.1 }
+      }).toDestination();
+      startBtn.classList.add('hidden');
+      setStatus('대기 중', 'text-blue-400');
+    });
+
+    // ====== MediaPipe FaceMesh ======
+    const faceMesh = new FaceMesh({ locateFile: f =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    faceMesh.onResults(onResults);
+
+    function drawLandmarks(img, lms){
+      drawConnectors(ctx, lms, FACEMESH_TESSELATION, {color:'#C0C0C070', lineWidth:1});
+      drawConnectors(ctx, lms, FACEMESH_LEFT_EYE,   {color:'#30FF30',   lineWidth:2});
+      drawConnectors(ctx, lms, FACEMESH_RIGHT_EYE,  {color:'#FF3030',   lineWidth:2});
+    }
+
+    function onResults(res){
+      const W = videoEl.videoWidth  || TARGET_W;
+      const H = videoEl.videoHeight || TARGET_H;
+      if (canvasEl.width !== W){ canvasEl.width = W; canvasEl.height = H; }
+
+      ctx.save();
+      ctx.clearRect(0,0,W,H);
+      ctx.drawImage(res.image, 0, 0, W, H);
+
+      const faces = res.multiFaceLandmarks || [];
+      if (faces.length){
+        const lms = faces[0];
+        drawLandmarks(res.image, lms);
+
+        // EAR 계산 + 스무딩
+        const ear = (earOf(lms, LIDX) + earOf(lms, RIDX))/2;
+        const sear = pushEar(ear);
+        earEl.textContent = sear.toFixed(2);
+
+        lastSeen = now();
+
+        // 관용 구간이면 판정하지 않음
+        if (now() < graceUntil){
+          setStatus('재검출 관용 구간', 'text-yellow-400');
+          showOverlay(false);
+        } else {
+          if (sear < EAR_THRESHOLD){
+            if (lowStart === null) lowStart = now();
+            const held = now() - lowStart;
+
+            if (held >= HOLD_MS){
+              setStatus('!! 졸음 감지 !!', 'text-red-500 animate-pulse');
+              showOverlay(true);
+              if (synth) beepOnce();
             } else {
-                videoFileElement.pause();
-                isVideoPlaying = false;
-                playPauseButton.textContent = "비디오 재생";
-                stopAlarm(); 
-                drowsyStartTime = null; 
-                statusElement.textContent = "분석 일시정지";
-                statusElement.className = "text-3xl font-bold text-gray-400";
+              setStatus('눈 감김 감지됨...', 'text-yellow-400');
+              showOverlay(false);
             }
-        });
-
-        // 비디오 다시 시작 버튼
-        restartButton.addEventListener('click', () => {
-            videoFileElement.currentTime = 0; 
-            if (!isVideoPlaying) {
-                videoFileElement.play();
-                isVideoPlaying = true;
-                playPauseButton.textContent = "비디오 일시정지";
-                startAnalysis(); 
-            }
-            stopAlarm(); 
-            drowsyStartTime = null; 
-        });
-
-
-        // 유클리드 거리 계산 함수
-        function getEuclideanDistance(p1, p2) {
-            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2) + Math.pow(p1.z - p2.z, 2));
+          } else {
+            lowStart = null;
+            setStatus('정상 주행 중', 'text-green-400');
+            showOverlay(false);
+          }
         }
+      } else {
+        // 미검출
+        earEl.textContent = '--';
+        setStatus('운전자를 찾을 수 없음', 'text-red-500');
+        showOverlay(false);
+        lowStart = null;
+        // 재획득 시 관용 구간을 주기 위해 기준만 기록
+        if (now() - lastSeen > 200) graceUntil = now() + GRACE_MS;
+      }
+      ctx.restore();
+    }
 
-        // EAR 계산 함수
-        function calculateEAR(landmarks, eyeIndices) {
-            const p2_p6 = getEuclideanDistance(landmarks[eyeIndices[1]], landmarks[eyeIndices[5]]);
-            const p3_p5 = getEuclideanDistance(landmarks[eyeIndices[2]], landmarks[eyeIndices[4]]);
-            const p1_p4 = getEuclideanDistance(landmarks[eyeIndices[0]], landmarks[eyeIndices[3]]);
-            const ear = (p2_p6 + p3_p5) / (2.0 * p1_p4);
-            return ear;
+    // ====== 파일 모드 루프 ======
+    function loopFile(){
+      cancelAnimationFrame(rafId);
+      const step = async () => {
+        if (mode !== 'file') return;
+        if (!videoEl.paused && !videoEl.ended){
+          await faceMesh.send({ image: videoEl });
         }
+        rafId = requestAnimationFrame(step);
+      };
+      rafId = requestAnimationFrame(step);
+    }
 
-        // 눈 랜드마크 인덱스
-        const LEFT_EYE_INDICES = [362, 385, 387, 263, 373, 380];
-        const RIGHT_EYE_INDICES = [33, 160, 158, 133, 153, 144];
+    // ====== 카메라 제어 ======
+    async function startCamera(){
+      stopFile();
+      mode = 'cam';
+      resetState();
+      setStatus('카메라 초기화 중...', 'text-blue-400');
+      videoEl.srcObject = null;
+      videoEl.width = TARGET_W; videoEl.height = TARGET_H;
 
-        // MediaPipe 결과 콜백 함수
-        function onResults(results) {
-            if (canvasElement.width !== videoFileElement.videoWidth) {
-                canvasElement.width = videoFileElement.videoWidth;
-                canvasElement.height = videoFileElement.videoHeight;
-            }
+      camera = new Camera(videoEl, {
+        onFrame: async () => { await faceMesh.send({ image: videoEl }); },
+        width: TARGET_W, height: TARGET_H
+      });
 
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      try {
+        await camera.start(); // 권한 팝업
+        setStatus('카메라 동작 중', 'text-green-400');
+      } catch (e){
+        setStatus('카메라 시작 실패: 권한/기기 확인', 'text-red-500');
+        console.error(e);
+      }
+    }
+    function stopCamera(){
+      if (camera && camera.stop) camera.stop();
+      const s = videoEl.srcObject;
+      if (s) s.getTracks().forEach(t => t.stop());
+      videoEl.srcObject = null;
+    }
 
-            if (isVideoPlaying && results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                loader.style.display = 'none';
-                const landmarks = results.multiFaceLandmarks[0];
-                
-                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
-                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#30FF30', lineWidth: 2});
-                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#FF3030', lineWidth: 2});
+    // ====== 파일 제어 ======
+    function startFile(src='drowsy_test_video.mp4'){
+      stopCamera();
+      mode = 'file';
+      resetState();
+      videoEl.srcObject = null;
+      videoEl.src = src;
+      videoEl.onloadeddata = () => {
+        videoEl.play().catch(()=>{});
+        loopFile();
+        setStatus('파일 재생 중', 'text-green-400');
+      };
+      videoEl.onerror = () => {
+        setStatus('비디오 로드 실패(경로/코덱 확인)', 'text-red-500');
+      };
+    }
+    function stopFile(){
+      cancelAnimationFrame(rafId);
+      try{ videoEl.pause(); }catch(_){}
+    }
 
-                // EAR 계산
-                const leftEAR = calculateEAR(landmarks, LEFT_EYE_INDICES);
-                const rightEAR = calculateEAR(landmarks, RIGHT_EYE_INDICES);
-                const ear = (leftEAR + rightEAR) / 2.0;
-                
-                earValueElement.textContent = ear.toFixed(2);
+    // ====== 버튼 핸들러 ======
+    btnFile.addEventListener('click', ()=> startFile());
+    btnCam .addEventListener('click', ()=> startCamera());
+    btnPick.addEventListener('click', ()=> inputPick.click());
+    inputPick.addEventListener('change', e=>{
+      const f = e.target.files[0];
+      if (!f) return;
+      startFile(URL.createObjectURL(f));
+    });
 
-                // 졸음 감지 로직
-                if (ear < EAR_THRESHOLD) {
-                    if (drowsyStartTime === null) {
-                        drowsyStartTime = Date.now();
-                    }
-                    const timeElapsed = Date.now() - drowsyStartTime;
-                    
-                    if (timeElapsed >= DROWSY_TIME_THRESHOLD) {
-                        if (!isDrowsy) {
-                            triggerAlarm();
-                            isDrowsy = true;
-                        }
-                        statusElement.textContent = "!! 졸음 감지 !!";
-                        statusElement.className = "text-3xl font-bold text-red-500 animate-pulse";
-                    } else {
-                        statusElement.textContent = "눈 감김 감지됨...";
-                        statusElement.className = "text-3xl font-bold text-yellow-400";
-                    }
-                } else {
-                    if (isDrowsy) {
-                        stopAlarm();
-                        isDrowsy = false;
-                    }
-                    drowsyStartTime = null;
-                    statusElement.textContent = "정상 주행 중";
-                    statusElement.className = "text-3xl font-bold text-green-400";
-                }
+    btnPlay.addEventListener('click', ()=>{
+      if (mode === 'file'){
+        if (videoEl.paused){ videoEl.play(); loopFile(); }
+        else { videoEl.pause(); }
+      }
+    });
+    btnReplay.addEventListener('click', ()=>{
+      if (mode === 'file'){
+        videoEl.currentTime = 0;
+        videoEl.play().catch(()=>{});
+        loopFile();
+      }
+    });
 
-            } else if (isVideoPlaying) {
-                loader.style.display = 'block';
-                statusElement.textContent = "운전자를 찾을 수 없음";
-                statusElement.className = "text-3xl font-bold text-red-500";
-                if (isDrowsy) {
-                    stopAlarm();
-                    isDrowsy = false;
-                }
-                drowsyStartTime = null;
-            } else {
-                loader.style.display = 'none';
-            }
-            canvasCtx.restore();
-        }
-
-        // 경고 시작
-        function triggerAlarm() {
-            alarmOverlay.classList.remove('hidden');
-            Tone.Transport.start();
-            beep.triggerAttack("A4");
-        }
-
-        // 경고 중지
-        function stopAlarm() {
-            alarmOverlay.classList.add('hidden');
-            beep.triggerRelease();
-            Tone.Transport.stop();
-        }
-
-        // FaceMesh 모델 초기화
-        const faceMesh = new FaceMesh({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-        }});
-        
-        faceMesh.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: true, 
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        faceMesh.onResults(onResults);
-
-        // 비디오 프레임 분석 시작 함수
-        async function startAnalysis() {
-            if (videoFileElement.paused || videoFileElement.ended || !isVideoPlaying) {
-                return;
-            }
-            await faceMesh.send({image: videoFileElement});
-            requestAnimationFrame(startAnalysis);
-        }
-
-        // 비디오가 끝나면 분석 중지
-        videoFileElement.addEventListener('ended', () => {
-            isVideoPlaying = false;
-            playPauseButton.textContent = "비디오 재생";
-            stopAlarm();
-            drowsyStartTime = null;
-            statusElement.textContent = "비디오 종료됨";
-            statusElement.className = "text-3xl font-bold text-gray-400";
-        });
-
-        // 비디오 메타데이터 로드 후 캔버스 크기 조절
-        videoFileElement.addEventListener('loadedmetadata', () => {
-            canvasElement.width = videoFileElement.videoWidth;
-            canvasElement.height = videoFileElement.videoHeight;
-            const container = document.getElementById('video-canvas-container');
-            container.style.aspectRatio = `${videoFileElement.videoWidth} / ${videoFileElement.videoHeight}`;
-        });
-        
-    </script>
+    // ====== 초기 ======
+    startFile(); // 기본은 파일 모드로 시작(웹캠은 버튼으로)
+  </script>
 </body>
 </html>

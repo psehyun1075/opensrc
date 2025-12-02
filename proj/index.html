@@ -1,28 +1,24 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>졸음운전 방지 시스템 (웹캠/파일 토글, 스무딩, 쿨다운)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>졸음운전 방지 시스템</title>
 
-  <!-- Tailwind -->
+  <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- MediaPipe -->
+  <!-- MediaPipe (전역 객체 사용) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 
-  <!-- Tone.js -->
+  <!-- Tone.js (오디오) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
-  <style>
-    .loader{border:8px solid #f3f3f3;border-top:8px solid #3498db;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10}
-    @keyframes spin{0%{transform:translate(-50%,-50%) rotate(0)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
-  </style>
+  <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col items-center justify-center">
-
   <!-- 경고 오버레이 -->
   <div id="alarm-overlay" class="hidden fixed inset-0 bg-red-600/75 z-50 flex items-center justify-center">
     <h1 class="text-6xl md:text-8xl font-extrabold animate-pulse">!! 졸음 감지 !!</h1>
@@ -34,31 +30,36 @@
   </button>
 
   <!-- 상단 컨트롤 -->
-  <div class="w-full max-w-[760px] flex flex-col gap-3 mb-4">
+  <div class="w-full max-w-[820px] flex flex-col gap-3 mb-4">
     <div class="flex flex-wrap gap-2">
       <button id="btn-file" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">파일로 분석</button>
       <button id="btn-cam"  class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">카메라 분석</button>
-      <input id="pick-file" type="file" accept="video/*" class="hidden">
       <button id="btn-pick" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">파일 선택</button>
+      <input id="pick-file" type="file" accept="video/*" class="hidden">
 
+      <span class="w-px h-6 bg-slate-600 mx-1 hidden md:inline-block"></span>
+      <button id="btn-music-toggle" class="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded">음악 알람: ON</button>
+      <button id="btn-music-pick" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">음악 파일 추가</button>
+      <input id="music-input" type="file" accept="audio/*" multiple class="hidden" />
+
+      <span class="w-px h-6 bg-slate-600 mx-1 hidden md:inline-block"></span>
       <button id="btn-play"   class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded ml-auto">재생/일시정지</button>
       <button id="btn-replay" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded">처음부터</button>
     </div>
-
     <div class="text-xs text-gray-400">
-      · 파일 기본 경로: <code>drowsy_test_video.mp4</code> (같은 폴더) · 실제 사용은 “카메라 분석” 권장
+      · 파일 기본: <code>assets/video/drowsy_test_video.mp4</code> · 실사용은 “카메라 분석” 권장 · 음악은 mp3/wav를 “음악 파일 추가”로 등록
     </div>
   </div>
 
   <!-- 비디오/캔버스 -->
-  <div class="relative w-full max-w-[760px] aspect-video bg-gray-800 rounded-lg shadow-2xl overflow-hidden">
+  <div class="relative w-full max-w-[820px] aspect-video bg-gray-800 rounded-lg shadow-2xl overflow-hidden">
     <video id="video" class="absolute w-full h-full object-contain bg-black" muted playsinline></video>
     <canvas id="canvas" class="absolute w-full h-full"></canvas>
     <div id="loader" class="loader hidden"></div>
   </div>
 
   <!-- 상태판 -->
-  <div class="mt-5 w-full max-w-[760px] bg-gray-800 p-5 rounded-lg">
+  <div class="mt-5 w-full max-w-[820px] bg-gray-800 p-5 rounded-lg">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <div class="text-gray-400 text-sm">현재 상태</div>
@@ -70,278 +71,16 @@
       </div>
     </div>
     <div class="text-xs text-gray-500 mt-3 text-center">
-      ※ EAR &lt; <span id="th-ear">0.20</span> 가 <span id="th-sec">1.0</span>초 이상 지속되면 0.2초 ‘삡’과 함께 경고. (2초 쿨다운)
+      EAR &lt; <span id="th-ear">0.20</span> 가 <span id="th-sec">1.0</span>초 이상 지속되면 경고(음악/삡).
     </div>
   </div>
 
-  <script>
-    // ====== 요소 ======
-    const startBtn   = document.getElementById('start-btn');
-    const btnFile    = document.getElementById('btn-file');
-    const btnCam     = document.getElementById('btn-cam');
-    const btnPick    = document.getElementById('btn-pick');
-    const inputPick  = document.getElementById('pick-file');
+  <!-- 엔트리 스크립트 -->
+  <script type="module" src="./js/app.js"></script>
 
-    const videoEl    = document.getElementById('video');
-    const canvasEl   = document.getElementById('canvas');
-    const ctx        = canvasEl.getContext('2d');
-    const loader     = document.getElementById('loader');
-
-    const btnPlay    = document.getElementById('btn-play');
-    const btnReplay  = document.getElementById('btn-replay');
-
-    const statusEl   = document.getElementById('status');
-    const earEl      = document.getElementById('ear');
-    const alarmOv    = document.getElementById('alarm-overlay');
-
-    // ====== 파라미터 ======
-    const EAR_THRESHOLD = 0.20;      // 임계 EAR
-    const HOLD_MS       = 1000;      // 지속시간 1초
-    const COOLDOWN_MS   = 2000;      // 경고음 쿨다운 2초
-    const GRACE_MS      = 500;       // 얼굴 재검출 관용 0.5초
-    const SMOOTH_N      = 10;        // EAR 이동평균 프레임 수
-    const TARGET_W      = 640, TARGET_H = 480;
-
-    document.getElementById('th-ear').textContent = EAR_THRESHOLD.toFixed(2);
-    document.getElementById('th-sec').textContent = (HOLD_MS/1000).toFixed(1);
-
-    // ====== 상태 ======
-    let mode = 'file';           // 'file' | 'cam'
-    let rafId = 0;
-    let camera = null;
-    let synth = null;
-    let lastBeep = 0;
-
-    let lowStart = null;         // EAR<thresh 시작 시각
-    let lastSeen = 0;            // 마지막 얼굴 검출 시각
-    let graceUntil = 0;          // 관용 구간 종료 시각
-
-    const earBuf = [];           // 이동평균 버퍼
-
-    // ====== 유틸 ======
-    const now = () => performance.now();
-
-    function avg(arr){
-      return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
-    }
-
-    function pushEar(v){
-      earBuf.push(v);
-      if (earBuf.length > SMOOTH_N) earBuf.shift();
-      return avg(earBuf);
-    }
-
-    function dist(a,b){
-      const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0);
-      return Math.hypot(dx,dy,dz);
-    }
-
-    function earOf(landmarks, idx){
-      const p1=landmarks[idx[0]], p2=landmarks[idx[1]], p3=landmarks[idx[2]],
-            p4=landmarks[idx[3]], p5=landmarks[idx[4]], p6=landmarks[idx[5]];
-      const A=dist(p2,p6), B=dist(p3,p5), C=dist(p1,p4);
-      return (A+B)/(2*C + 1e-6);
-    }
-
-    const LIDX = [33,160,158,133,153,144];   // 좌안 6점
-    const RIDX = [362,385,387,263,373,380];  // 우안 6점
-
-    function setStatus(text, cls){
-      statusEl.textContent = text;
-      statusEl.className = `text-3xl font-bold ${cls}`;
-    }
-
-    function showOverlay(on){
-      alarmOv.classList.toggle('hidden', !on);
-    }
-
-    function beepOnce(){
-      const t = now();
-      if (t - lastBeep < COOLDOWN_MS) return;
-      lastBeep = t;
-      synth.triggerAttackRelease("A4", 0.2); // 0.2초 '삡'
-    }
-
-    function resetState(){
-      earBuf.length = 0;
-      lowStart = null;
-      showOverlay(false);
-    }
-
-    // ====== Tone.js 시작(사용자 제스처 필요) ======
-    startBtn.addEventListener('click', async () => {
-      await Tone.start();
-      synth = new Tone.Synth({
-        oscillator:{ type:'sine' },
-        envelope:{ attack:0.01, decay:0.05, sustain:0.3, release:0.1 }
-      }).toDestination();
-      startBtn.classList.add('hidden');
-      setStatus('대기 중', 'text-blue-400');
-    });
-
-    // ====== MediaPipe FaceMesh ======
-    const faceMesh = new FaceMesh({ locateFile: f =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
-    });
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-    faceMesh.onResults(onResults);
-
-    function drawLandmarks(img, lms){
-      drawConnectors(ctx, lms, FACEMESH_TESSELATION, {color:'#C0C0C070', lineWidth:1});
-      drawConnectors(ctx, lms, FACEMESH_LEFT_EYE,   {color:'#30FF30',   lineWidth:2});
-      drawConnectors(ctx, lms, FACEMESH_RIGHT_EYE,  {color:'#FF3030',   lineWidth:2});
-    }
-
-    function onResults(res){
-      const W = videoEl.videoWidth  || TARGET_W;
-      const H = videoEl.videoHeight || TARGET_H;
-      if (canvasEl.width !== W){ canvasEl.width = W; canvasEl.height = H; }
-
-      ctx.save();
-      ctx.clearRect(0,0,W,H);
-      ctx.drawImage(res.image, 0, 0, W, H);
-
-      const faces = res.multiFaceLandmarks || [];
-      if (faces.length){
-        const lms = faces[0];
-        drawLandmarks(res.image, lms);
-
-        // EAR 계산 + 스무딩
-        const ear = (earOf(lms, LIDX) + earOf(lms, RIDX))/2;
-        const sear = pushEar(ear);
-        earEl.textContent = sear.toFixed(2);
-
-        lastSeen = now();
-
-        // 관용 구간이면 판정하지 않음
-        if (now() < graceUntil){
-          setStatus('재검출 관용 구간', 'text-yellow-400');
-          showOverlay(false);
-        } else {
-          if (sear < EAR_THRESHOLD){
-            if (lowStart === null) lowStart = now();
-            const held = now() - lowStart;
-
-            if (held >= HOLD_MS){
-              setStatus('!! 졸음 감지 !!', 'text-red-500 animate-pulse');
-              showOverlay(true);
-              if (synth) beepOnce();
-            } else {
-              setStatus('눈 감김 감지됨...', 'text-yellow-400');
-              showOverlay(false);
-            }
-          } else {
-            lowStart = null;
-            setStatus('정상 주행 중', 'text-green-400');
-            showOverlay(false);
-          }
-        }
-      } else {
-        // 미검출
-        earEl.textContent = '--';
-        setStatus('운전자를 찾을 수 없음', 'text-red-500');
-        showOverlay(false);
-        lowStart = null;
-        // 재획득 시 관용 구간을 주기 위해 기준만 기록
-        if (now() - lastSeen > 200) graceUntil = now() + GRACE_MS;
-      }
-      ctx.restore();
-    }
-
-    // ====== 파일 모드 루프 ======
-    function loopFile(){
-      cancelAnimationFrame(rafId);
-      const step = async () => {
-        if (mode !== 'file') return;
-        if (!videoEl.paused && !videoEl.ended){
-          await faceMesh.send({ image: videoEl });
-        }
-        rafId = requestAnimationFrame(step);
-      };
-      rafId = requestAnimationFrame(step);
-    }
-
-    // ====== 카메라 제어 ======
-    async function startCamera(){
-      stopFile();
-      mode = 'cam';
-      resetState();
-      setStatus('카메라 초기화 중...', 'text-blue-400');
-      videoEl.srcObject = null;
-      videoEl.width = TARGET_W; videoEl.height = TARGET_H;
-
-      camera = new Camera(videoEl, {
-        onFrame: async () => { await faceMesh.send({ image: videoEl }); },
-        width: TARGET_W, height: TARGET_H
-      });
-
-      try {
-        await camera.start(); // 권한 팝업
-        setStatus('카메라 동작 중', 'text-green-400');
-      } catch (e){
-        setStatus('카메라 시작 실패: 권한/기기 확인', 'text-red-500');
-        console.error(e);
-      }
-    }
-    function stopCamera(){
-      if (camera && camera.stop) camera.stop();
-      const s = videoEl.srcObject;
-      if (s) s.getTracks().forEach(t => t.stop());
-      videoEl.srcObject = null;
-    }
-
-    // ====== 파일 제어 ======
-    function startFile(src='drowsy_test_video.mp4'){
-      stopCamera();
-      mode = 'file';
-      resetState();
-      videoEl.srcObject = null;
-      videoEl.src = src;
-      videoEl.onloadeddata = () => {
-        videoEl.play().catch(()=>{});
-        loopFile();
-        setStatus('파일 재생 중', 'text-green-400');
-      };
-      videoEl.onerror = () => {
-        setStatus('비디오 로드 실패(경로/코덱 확인)', 'text-red-500');
-      };
-    }
-    function stopFile(){
-      cancelAnimationFrame(rafId);
-      try{ videoEl.pause(); }catch(_){}
-    }
-
-    // ====== 버튼 핸들러 ======
-    btnFile.addEventListener('click', ()=> startFile());
-    btnCam .addEventListener('click', ()=> startCamera());
-    btnPick.addEventListener('click', ()=> inputPick.click());
-    inputPick.addEventListener('change', e=>{
-      const f = e.target.files[0];
-      if (!f) return;
-      startFile(URL.createObjectURL(f));
-    });
-
-    btnPlay.addEventListener('click', ()=>{
-      if (mode === 'file'){
-        if (videoEl.paused){ videoEl.play(); loopFile(); }
-        else { videoEl.pause(); }
-      }
-    });
-    btnReplay.addEventListener('click', ()=>{
-      if (mode === 'file'){
-        videoEl.currentTime = 0;
-        videoEl.play().catch(()=>{});
-        loopFile();
-      }
-    });
-
-    // ====== 초기 ======
-    startFile(); // 기본은 파일 모드로 시작(웹캠은 버튼으로)
-  </script>
+  <style>
+    .loader{border:8px solid #f3f3f3;border-top:8px solid #3498db;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10}
+    @keyframes spin{0%{transform:translate(-50%,-50%) rotate(0)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
+  </style>
 </body>
 </html>

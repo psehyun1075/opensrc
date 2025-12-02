@@ -1,0 +1,15 @@
+export const CONFIG = {
+  EAR_THRESHOLD: 0.20,
+  HOLD_MS: 1000,
+  SMOOTH_N: 10,
+  GRACE_MS: 500,
+  BEEP_COOLDOWN_MS: 2000,
+  MUSIC: {
+    ENABLED_DEFAULT: true,
+    COOLDOWN_MS: 8000,
+    MAXLEN_SEC: 12,
+    FADEIN_SEC: 2.0,
+    FADEOUT_SEC: 1.0,
+  },
+  VIDEO: { WIDTH: 640, HEIGHT: 480 },
+};

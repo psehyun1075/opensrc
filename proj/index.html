@@ -8,15 +8,17 @@
   <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- MediaPipe (전역 객체 사용) -->
+  <!-- MediaPipe (전역) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 
-  <!-- Tone.js (오디오) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
-
+  <!-- (선택) 스타일 파일이 없으면 404가 나와도 기능엔 영향 없음 -->
   <link rel="stylesheet" href="assets/css/styles.css" />
+  <style>
+    .loader{border:8px solid #f3f3f3;border-top:8px solid #3498db;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10}
+    @keyframes spin{0%{transform:translate(-50%,-50%) rotate(0)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
+  </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col items-center justify-center">
   <!-- 경고 오버레이 -->
@@ -24,7 +26,7 @@
     <h1 class="text-6xl md:text-8xl font-extrabold animate-pulse">!! 졸음 감지 !!</h1>
   </div>
 
-  <!-- 시작 버튼 -->
+  <!-- 시작 버튼 (브라우저 오디오 제스처 확보용) -->
   <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg text-2xl shadow-lg mb-6">
     시작(오디오 권한 활성화)
   </button>
@@ -38,16 +40,16 @@
       <input id="pick-file" type="file" accept="video/*" class="hidden">
 
       <span class="w-px h-6 bg-slate-600 mx-1 hidden md:inline-block"></span>
-      <button id="btn-music-toggle" class="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded">음악 알람: ON</button>
-      <button id="btn-music-pick" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">음악 파일 추가</button>
-      <input id="music-input" type="file" accept="audio/*" multiple class="hidden" />
+      <button id="btn-music-pick" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded">음악 파일 추가 (0)</button>
+      <input id="music-input" type="file" accept="audio/*" class="hidden" />
+      <button id="btn-music-stop" class="bg-rose-600 hover:bg-rose-700 px-4 py-2 rounded">노래 끄기</button>
 
       <span class="w-px h-6 bg-slate-600 mx-1 hidden md:inline-block"></span>
       <button id="btn-play"   class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded ml-auto">재생/일시정지</button>
       <button id="btn-replay" class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded">처음부터</button>
     </div>
     <div class="text-xs text-gray-400">
-      · 파일 기본: <code>assets/video/drowsy_test_video.mp4</code> · 실사용은 “카메라 분석” 권장 · 음악은 mp3/wav를 “음악 파일 추가”로 등록
+      · 파일 기본: <code>assets/video/drowsy_test_video.mp4</code> · 실사용은 “카메라 분석” 권장 · 음악(mp3/wav)을 등록해두면 **졸음 감지 시 자동 무한반복**, ‘노래 끄기’를 누를 때까지 계속 재생
     </div>
   </div>
 
@@ -71,16 +73,11 @@
       </div>
     </div>
     <div class="text-xs text-gray-500 mt-3 text-center">
-      EAR &lt; <span id="th-ear">0.20</span> 가 <span id="th-sec">1.0</span>초 이상 지속되면 경고(음악/삡).
+      EAR &lt; <span id="th-ear">0.20</span> 가 <span id="th-sec">1.0</span>초 이상 지속되면 음악이 **무한반복**으로 재생됩니다. 복귀해도 자동 종료하지 않으며 ‘노래 끄기’를 눌러야 멈춥니다.
     </div>
   </div>
 
   <!-- 엔트리 스크립트 -->
   <script type="module" src="./js/app.js"></script>
-
-  <style>
-    .loader{border:8px solid #f3f3f3;border-top:8px solid #3498db;border-radius:50%;width:60px;height:60px;animation:spin 1s linear infinite;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10}
-    @keyframes spin{0%{transform:translate(-50%,-50%) rotate(0)}100%{transform:translate(-50%,-50%) rotate(360deg)}}
-  </style>
 </body>
 </html>
